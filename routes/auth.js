@@ -75,7 +75,7 @@ const changePasswordValidation = [
  * @desc    Register a new user
  * @access  Public
  */
-router.post('/register', 
+router.post('/register',
   authRateLimit(5, 15 * 60 * 1000), // 5 attempts per 15 minutes
   registerValidation,
   handleValidationErrors,
@@ -224,12 +224,93 @@ if (process.env.NODE_ENV === 'development') {
    * @access  Public
    */
   router.get('/test', (req, res) => {
-    res.json({ 
+    res.json({
       message: 'Auth routes working',
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV 
+      environment: process.env.NODE_ENV
     });
   });
 }
 
+// Add these new routes for email OTP verification
+
+/**
+ * @route   POST /api/v1/auth/send-registration-otp
+ * @desc    Send OTP for registration verification
+ * @access  Public
+ */
+router.post('/send-registration-otp',
+  authRateLimit(3, 15 * 60 * 1000), // 3 attempts per 15 minutes
+  body('firstName')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('First name must be between 2 and 50 characters'),
+  body('lastName')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Last name must be between 2 and 50 characters'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('mobile')
+    .matches(/^[0-9]{7,15}$/)
+    .withMessage('Please provide a valid mobile number (7-15 digits)'),
+  body('dialingCode')
+    .matches(/^\+\d{1,4}$/)
+    .withMessage('Please provide a valid dialing code (e.g., +91)'),
+  handleValidationErrors,
+  authController.sendRegistrationOTP
+);
+
+/**
+ * @route   POST /api/v1/auth/verify-registration-otp
+ * @desc    Verify OTP and complete registration
+ * @access  Public
+ */
+router.post('/verify-registration-otp',
+  authRateLimit(5, 15 * 60 * 1000), // 5 attempts per 15 minutes
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('otp')
+    .matches(/^\d{6}$/)
+    .withMessage('OTP must be exactly 6 digits'),
+  handleValidationErrors,
+  authController.verifyRegistrationOTP
+);
+
+/**
+ * @route   POST /api/v1/auth/send-login-otp
+ * @desc    Send OTP for login
+ * @access  Public
+ */
+router.post('/send-login-otp',
+  authRateLimit(3, 15 * 60 * 1000), // 3 attempts per 15 minutes
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  handleValidationErrors,
+  authController.sendLoginOTP
+);
+
+/**
+ * @route   POST /api/v1/auth/verify-login-otp
+ * @desc    Verify OTP and login user
+ * @access  Public
+ */
+router.post('/verify-login-otp',
+  authRateLimit(5, 15 * 60 * 1000), // 5 attempts per 15 minutes
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('otp')
+    .matches(/^\d{6}$/)
+    .withMessage('OTP must be exactly 6 digits'),
+  handleValidationErrors,
+  authController.verifyLoginOTP
+);
 module.exports = router;

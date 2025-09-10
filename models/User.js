@@ -35,12 +35,6 @@ const userSchema = new mongoose.Schema({
     trim: true,
     match: [/^\+\d{1,4}$/, 'Please enter a valid dialing code (e.g., +91)']
   },
-  password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minLength: [8, 'Password must be at least 8 characters long'],
-    select: false // Don't include password in queries by default
-  },
   isEmailVerified: {
     type: Boolean,
     default: false
@@ -114,8 +108,17 @@ const userSchema = new mongoose.Schema({
       sms: {
         type: Boolean,
         default: false
-      }
+      },
     }
+  },
+
+  loginOTP: {
+    type: String,
+    select: false
+  },
+  loginOTPExpires: {
+    type: Date,
+    select: false
   },
   metadata: {
     registrationIP: String,
@@ -136,32 +139,19 @@ userSchema.index({ status: 1 });
 userSchema.index({ createdAt: -1 });
 
 // Virtual for full name
-userSchema.virtual('fullName').get(function() {
+userSchema.virtual('fullName').get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
 // Virtual for account lock status
-userSchema.virtual('isLocked').get(function() {
+userSchema.virtual('isLocked').get(function () {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
-// Pre-save middleware to hash password
-userSchema.pre('save', async function(next) {
-  // Only hash the password if it has been modified (or is new)
-  if (!this.isModified('password')) return next();
 
-  try {
-    // Hash the password with cost of 12
-    const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
-    this.password = await bcrypt.hash(this.password, saltRounds);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
 
 // Pre-save middleware to handle email changes
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
   // If email is modified, mark as unverified
   if (this.isModified('email') && !this.isNew) {
     this.isEmailVerified = false;
@@ -171,14 +161,25 @@ userSchema.pre('save', function(next) {
   next();
 });
 
-// Instance method to check password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  if (!this.password) return false;
-  return await bcrypt.compare(candidatePassword, this.password);
+// Instance method to generate login OTP
+userSchema.methods.generateLoginOTP = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.loginOTP = crypto.createHash('sha256').update(otp).digest('hex');
+  this.loginOTPExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return otp;
+};
+
+// Instance method to verify login OTP
+userSchema.methods.verifyLoginOTP = function (candidateOTP) {
+  if (!this.loginOTP || !this.loginOTPExpires) return false;
+  if (Date.now() > this.loginOTPExpires) return false;
+
+  const hashedOTP = crypto.createHash('sha256').update(candidateOTP).digest('hex');
+  return hashedOTP === this.loginOTP;
 };
 
 // Instance method to generate email verification token
-userSchema.methods.generateEmailVerificationToken = function() {
+userSchema.methods.generateEmailVerificationToken = function () {
   const token = crypto.randomBytes(32).toString('hex');
   this.emailVerificationToken = crypto.createHash('sha256').update(token).digest('hex');
   this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
@@ -186,7 +187,7 @@ userSchema.methods.generateEmailVerificationToken = function() {
 };
 
 // Instance method to generate mobile OTP
-userSchema.methods.generateMobileOTP = function() {
+userSchema.methods.generateMobileOTP = function () {
   const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
   this.mobileVerificationOTP = crypto.createHash('sha256').update(otp).digest('hex');
   this.mobileVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
@@ -194,7 +195,7 @@ userSchema.methods.generateMobileOTP = function() {
 };
 
 // Instance method to generate password reset token
-userSchema.methods.generatePasswordResetToken = function() {
+userSchema.methods.generatePasswordResetToken = function () {
   const token = crypto.randomBytes(32).toString('hex');
   this.resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
   this.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
@@ -202,7 +203,7 @@ userSchema.methods.generatePasswordResetToken = function() {
 };
 
 // Instance method to handle failed login attempts
-userSchema.methods.incLoginAttempts = function() {
+userSchema.methods.incLoginAttempts = function () {
   // If we have a previous lock that has expired, restart at 1
   if (this.lockUntil && this.lockUntil < Date.now()) {
     return this.updateOne({
@@ -210,19 +211,19 @@ userSchema.methods.incLoginAttempts = function() {
       $set: { loginAttempts: 1 }
     });
   }
-  
+
   const updates = { $inc: { loginAttempts: 1 } };
-  
+
   // Lock account after 5 failed attempts for 2 hours
   if (this.loginAttempts + 1 >= 5 && !this.isLocked) {
     updates.$set = { lockUntil: Date.now() + 2 * 60 * 60 * 1000 }; // 2 hours
   }
-  
+
   return this.updateOne(updates);
 };
 
 // Instance method to reset login attempts
-userSchema.methods.resetLoginAttempts = function() {
+userSchema.methods.resetLoginAttempts = function () {
   return this.updateOne({
     $unset: {
       loginAttempts: 1,
@@ -232,15 +233,15 @@ userSchema.methods.resetLoginAttempts = function() {
 };
 
 // Static method to find user for authentication
-userSchema.statics.findForAuthentication = function(email) {
-  return this.findOne({ 
+userSchema.statics.findForAuthentication = function (email) {
+  return this.findOne({
     email: email.toLowerCase(),
     status: 'active'
   }).select('+password +loginAttempts +lockUntil');
 };
 
 // Static method to verify email token
-userSchema.statics.findByEmailVerificationToken = function(token) {
+userSchema.statics.findByEmailVerificationToken = function (token) {
   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   return this.findOne({
     emailVerificationToken: hashedToken,
@@ -249,7 +250,7 @@ userSchema.statics.findByEmailVerificationToken = function(token) {
 };
 
 // Static method to verify mobile OTP
-userSchema.statics.findByMobileOTP = function(otp, mobile, dialingCode) {
+userSchema.statics.findByMobileOTP = function (otp, mobile, dialingCode) {
   const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
   return this.findOne({
     mobile,
@@ -260,7 +261,7 @@ userSchema.statics.findByMobileOTP = function(otp, mobile, dialingCode) {
 };
 
 // Static method to find by password reset token
-userSchema.statics.findByPasswordResetToken = function(token) {
+userSchema.statics.findByPasswordResetToken = function (token) {
   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   return this.findOne({
     resetPasswordToken: hashedToken,
@@ -269,7 +270,7 @@ userSchema.statics.findByPasswordResetToken = function(token) {
 };
 
 // Remove sensitive fields from JSON output
-userSchema.methods.toJSON = function() {
+userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
   delete userObject.emailVerificationToken;

@@ -3,65 +3,43 @@ const logger = require('../utils/logger');
 
 // Create transporter
 const createTransporter = () => {
-  if (process.env.EMAIL_SERVICE === 'gmail') {
-    return nodemailer.createTransporter({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
-  }
-  
-  // Default SMTP configuration
-  return nodemailer.createTransporter({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: process.env.EMAIL_PORT || 587,
-    secure: false,
+  // Use AWS SES SMTP configuration
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'email-smtp.ap-south-1.amazonaws.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false, // true for 465, false for other ports
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
     }
   });
 };
-
 /**
  * Send email verification
  */
 const sendEmailVerification = async (email, firstName, token) => {
   try {
     const transporter = createTransporter();
-    
+
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${token}`;
-    
+
     const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'VisaMap'} <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+      from: process.env.EMAIL_SENDER || 'support@foreignadmits.com', // Use your verified SES email
       to: email,
-      subject: 'Verify Your Email - VisaMap',
+      subject: 'Your Registration OTP - VisaMonk',
       html: `
-        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
-          <h2>Welcome to VisaMap, ${firstName}!</h2>
-          <p>Thank you for registering with VisaMap. Please verify your email address by clicking the button below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationUrl}" 
-               style="background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-               Verify Email Address
-            </a>
-          </div>
-          <p>Or copy and paste this link in your browser:</p>
-          <p style="word-break: break-all; color: #666;">${verificationUrl}</p>
-          <p>This link will expire in 24 hours.</p>
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-          <p style="color: #666; font-size: 14px;">
-            If you didn't create an account with VisaMap, please ignore this email.
-          </p>
-        </div>
-      `
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+      <h2>Welcome ${firstName}!</h2>
+      <p>Your OTP for registration is: <strong style="font-size: 24px; color: #4F46E5;">${otp}</strong></p>
+      <p>This OTP will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    </div>
+  `
     };
 
     await transporter.sendMail(mailOptions);
     logger.info(`Email verification sent to: ${email}`);
-    
+
   } catch (error) {
     logger.error('Email verification send failed:', error);
     throw error;
@@ -74,45 +52,122 @@ const sendEmailVerification = async (email, firstName, token) => {
 const sendPasswordReset = async (email, firstName, token) => {
   try {
     const transporter = createTransporter();
-    
+
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`;
-    
+
     const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'VisaMap'} <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+      from: process.env.EMAIL_SENDER || 'support@foreignadmits.com', // Use your verified SES email
       to: email,
-      subject: 'Reset Your Password - VisaMap',
+      subject: 'Your Registration OTP - VisaMonk',
       html: `
-        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
-          <h2>Password Reset Request</h2>
-          <p>Hi ${firstName},</p>
-          <p>We received a request to reset your password for your VisaMap account.</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetUrl}" 
-               style="background-color: #DC2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-               Reset Password
-            </a>
-          </div>
-          <p>Or copy and paste this link in your browser:</p>
-          <p style="word-break: break-all; color: #666;">${resetUrl}</p>
-          <p>This link will expire in 15 minutes for security reasons.</p>
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-          <p style="color: #666; font-size: 14px;">
-            If you didn't request a password reset, please ignore this email and your password will remain unchanged.
-          </p>
-        </div>
-      `
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+      <h2>Welcome ${firstName}!</h2>
+      <p>Your OTP for registration is: <strong style="font-size: 24px; color: #4F46E5;">${otp}</strong></p>
+      <p>This OTP will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    </div>
+  `
     };
 
     await transporter.sendMail(mailOptions);
     logger.info(`Password reset email sent to: ${email}`);
-    
+
   } catch (error) {
     logger.error('Password reset email send failed:', error);
     throw error;
   }
 };
 
+/**
+ * Send registration OTP
+ */
+const sendRegistrationOTP = async (email, firstName, otp) => {
+  try {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: process.env.EMAIL_SENDER || 'support@foreignadmits.com', // Use your verified SES email
+      to: email,
+      subject: 'Your Registration OTP - VisaMonk',
+      html: `
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+      <h2>Welcome ${firstName}!</h2>
+      <p>Your OTP for registration is: <strong style="font-size: 24px; color: #4F46E5;">${otp}</strong></p>
+      <p>This OTP will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    </div>
+  `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending registration OTP:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send login OTP
+ */
+const sendLoginOTP = async (email, firstName, otp) => {
+  try {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: process.env.EMAIL_SENDER || 'support@foreignadmits.com',
+      to: email,
+      subject: 'Your Login OTP - VisaMonk',
+      html: `
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">VisaMonk</h1>
+          </div>
+          
+          <div style="padding: 30px; background: #f9f9f9;">
+            <h2 style="color: #333; margin-bottom: 20px;">Welcome back, ${firstName}!</h2>
+            
+            <p style="color: #666; font-size: 16px; line-height: 1.5;">
+              You requested to login to your VisaMonk account. Use the OTP below to continue:
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <div style="background: white; border: 2px dashed #667eea; border-radius: 10px; padding: 20px; display: inline-block;">
+                <span style="font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 5px;">${otp}</span>
+              </div>
+            </div>
+            
+            <p style="color: #666; font-size: 14px; text-align: center;">
+              This OTP will expire in <strong>10 minutes</strong>
+            </p>
+            
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+              <p style="color: #856404; margin: 0; font-size: 14px;">
+                <strong>Security Note:</strong> If you didn't request this login, please ignore this email or contact support.
+              </p>
+            </div>
+          </div>
+          
+          <div style="background: #333; padding: 20px; text-align: center;">
+            <p style="color: #999; margin: 0; font-size: 12px;">
+              VisaMonk - Your trusted visa guidance partner
+            </p>
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending login OTP:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendEmailVerification,
-  sendPasswordReset
+  sendPasswordReset,
+  sendRegistrationOTP,
+  sendLoginOTP
 };
